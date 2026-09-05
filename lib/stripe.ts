@@ -1,13 +1,18 @@
 // Server-only Stripe helper. Talks to the Stripe REST API directly with fetch
 // so the app does not need an extra runtime dependency.
-import 'server-only'
+//
+// This module must never be imported from a client component: it reads
+// STRIPE_SECRET_KEY, which is not a NEXT_PUBLIC_ variable and is therefore
+// only available in the Node.js runtime.
 
 const STRIPE_API = 'https://api.stripe.com/v1'
 
 export function getStripeSecretKey(): string {
   const key = process.env.STRIPE_SECRET_KEY
   if (!key) {
-    throw new Error('STRIPE_SECRET_KEY is not set')
+    throw new Error(
+      'STRIPE_SECRET_KEY is not set. Add it in your Vercel project environment variables.'
+    )
   }
   return key
 }
