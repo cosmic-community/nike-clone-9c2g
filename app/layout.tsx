@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import CosmicBadge from '@/components/CosmicBadge'
+import { CartProvider } from '@/lib/cart'
 
 export const metadata: Metadata = {
   title: 'Nike Clone | Just Do It',
@@ -29,9 +30,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <script defer src="https://insights.cosmicinsights.dev/script.js" data-project="6a9b7a5d254225867de1da06"></script>
       </head>
       <body className="bg-white text-black font-sans antialiased flex flex-col min-h-screen">
-        <Header />
-        <main className="flex-1">{children}</main>
-        <Footer />
+        <CartProvider>
+          <Header />
+          <main className="flex-1">{children}</main>
+          <Footer />
+        </CartProvider>
         <CosmicBadge bucketSlug={bucketSlug} />
       </body>
     </html>
