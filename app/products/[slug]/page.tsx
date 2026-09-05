@@ -27,6 +27,10 @@ export default async function ProductPage({ params }: ProductPageProps) {
   const category = product.metadata?.category
   const inventoryStatus = getMetafieldValue(product.metadata?.inventory_status)
 
+  const price = Number(product.metadata?.price) || 0
+  const priceId = getMetafieldValue(product.metadata?.stripe_price_id) || undefined
+  const primaryImage = product.metadata?.gallery?.[0]?.imgix_url
+
   const avgRating =
     reviews.length > 0
       ? reviews.reduce((sum, r) => sum + (Number(r.metadata?.rating) || 0), 0) / reviews.length
@@ -78,7 +82,15 @@ export default async function ProductPage({ params }: ProductPageProps) {
           )}
 
           <div className="border-t border-gray-200 mt-6 pt-6">
-            <VariantSelector variants={product.metadata?.variants || []} />
+            <VariantSelector
+              variants={product.metadata?.variants || []}
+              productId={product.id}
+              slug={product.slug}
+              name={name}
+              price={price}
+              priceId={priceId}
+              image={primaryImage}
+            />
           </div>
 
           {description && (
