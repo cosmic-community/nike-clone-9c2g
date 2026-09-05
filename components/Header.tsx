@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { getCategories, getMetafieldValue } from '@/lib/cosmic'
 import MobileMenu from '@/components/MobileMenu'
+import CartBadge from '@/components/CartBadge'
 
 export default async function Header() {
   const categories = await getCategories()
@@ -37,7 +38,10 @@ export default async function Header() {
             </Link>
           </nav>
 
-          <MobileMenu categories={categories} />
+          <div className="flex items-center gap-1">
+            <CartBadge />
+            <MobileMenu categories={categories} />
+          </div>
         </div>
       </div>
     </header>

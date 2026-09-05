@@ -48,6 +48,9 @@ export interface Product extends CosmicObject {
     featured?: boolean
     category?: Category
     variants?: ProductVariant[]
+    // Synced from Stripe so checkout can reference a real Price object.
+    stripe_product_id?: string
+    stripe_price_id?: string
   }
 }
 
@@ -68,4 +71,19 @@ export interface CosmicResponse<T> {
   total: number
   limit?: number
   skip?: number
+}
+
+// A single line in the shopping bag. `key` uniquely identifies a
+// product + variant combination so the same shoe in two sizes stays separate.
+export interface CartItem {
+  key: string
+  productId: string
+  slug: string
+  name: string
+  price: number
+  priceId: string
+  image?: string
+  color?: string
+  size?: string
+  quantity: number
 }

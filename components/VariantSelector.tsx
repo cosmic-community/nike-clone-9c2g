@@ -2,43 +2,58 @@
 
 import { useState, useMemo } from 'react'
 import type { ProductVariant } from '@/types'
+import AddToBag from '@/components/AddToBag'
 
 interface VariantSelectorProps {
   variants: ProductVariant[]
+  productId: string
+  slug: string
+  name: string
+  price: number
+  priceId?: string
+  image?: string
 }
 
-export default function VariantSelector({ variants }: VariantSelectorProps) {
+export default function VariantSelector({
+  variants,
+  productId,
+  slug,
+  name,
+  price,
+  priceId,
+  image,
+}: VariantSelectorProps) {
+  const safeVariants = variants || []
+
   const colors = useMemo(() => {
     const set = new Set<string>()
-    variants.forEach((v) => {
+    safeVariants.forEach((v) => {
       if (v.color) set.add(String(v.color))
     })
     return Array.from(set)
-  }, [variants])
+  }, [safeVariants])
 
   const sizes = useMemo(() => {
     const set = new Set<string>()
-    variants.forEach((v) => {
+    safeVariants.forEach((v) => {
       if (v.size) set.add(String(v.size))
     })
     return Array.from(set)
-  }, [variants])
+  }, [safeVariants])
 
   const [selectedColor, setSelectedColor] = useState<string | null>(colors[0] || null)
   const [selectedSize, setSelectedSize] = useState<string | null>(null)
 
-  if (!variants || variants.length === 0) {
-    return null
-  }
-
-  const matchedVariant = variants.find(
+  const matchedVariant = safeVariants.find(
     (v) =>
       (!selectedColor || String(v.color) === selectedColor) &&
       (!selectedSize || String(v.size) === selectedSize)
   )
 
   const isOutOfStock =
-    Boolean(matchedVariant) && typeof matchedVariant?.stock === 'number' && (matchedVariant.stock as number) <= 0
+    Boolean(matchedVariant) &&
+    typeof matchedVariant?.stock === 'number' &&
+    (matchedVariant.stock as number) <= 0
 
   return (
     <div className="space-y-6">
@@ -90,15 +105,18 @@ export default function VariantSelector({ variants }: VariantSelectorProps) {
         </div>
       )}
 
-      <button
-        type="button"
+      <AddToBag
+        productId={productId}
+        slug={slug}
+        name={name}
+        price={price}
+        priceId={priceId}
+        image={image}
+        color={selectedColor || undefined}
+        size={selectedSize || undefined}
+        requiresSize={sizes.length > 0}
         disabled={isOutOfStock}
-        className={`w-full py-4 rounded-full font-bold uppercase tracking-wide transition-colors ${
-          isOutOfStock ? 'bg-gray-200 text-gray-500 cursor-not-allowed' : 'bg-accent text-white hover:bg-black'
-        }`}
-      >
-        {isOutOfStock ? 'Out of Stock' : 'Add to Bag'}
-      </button>
+      />
     </div>
   )
 }
