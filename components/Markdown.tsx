@@ -6,7 +6,7 @@ import React from 'react'
  * Minimal, dependency-free markdown renderer scoped to chat bubbles.
  *
  * Supports: headings, bold, italic, inline code, fenced code blocks, links,
- * ordered/unordered lists, blockquotes, tables and horizontal rules.
+ * images, ordered/unordered lists, blockquotes, tables and horizontal rules.
  *
  * It never injects raw HTML (no dangerouslySetInnerHTML) and only allows
  * http(s), mailto, relative and hash hrefs, so agent output cannot smuggle
@@ -19,8 +19,57 @@ function safeHref(raw: string): string | null {
   return null
 }
 
+/**
+ * Image sources are stricter than link hrefs: no mailto, no hash. Only remote
+ * http(s), protocol-relative and site-relative paths are allowed, which keeps
+ * `javascript:` and `data:` payloads out of the DOM.
+ */
+function safeSrc(raw: string): string | null {
+  const src = raw.trim()
+  if (/^(https?:\/\/|\/\/|\/)/i.test(src)) return src
+  return null
+}
+
+const IMAGE_LINE_RE = /^\s*!\[[^\]\n]*\]\([^)\s]+\)\s*$/
+const IMAGE_TOKEN_RE = /!\[([^\]\n]*)\]\(([^)\s]+)\)/
+
+/**
+ * Renders a single markdown image. Agent replies can reference media that has
+ * moved or 404s, so a failed load collapses the element rather than leaving a
+ * broken-image icon in the middle of the conversation.
+ */
+function MarkdownImage({
+  src,
+  alt,
+  block,
+}: {
+  src: string
+  alt: string
+  block?: boolean
+}) {
+  const [failed, setFailed] = React.useState(false)
+
+  if (failed) return null
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={alt}
+      loading="lazy"
+      decoding="async"
+      onError={() => setFailed(true)}
+      className={
+        block
+          ? 'h-auto w-full rounded-lg border border-black/10 bg-black/5 object-cover'
+          : 'my-1 inline-block h-auto max-w-full rounded-md border border-black/10 align-middle'
+      }
+    />
+  )
+}
+
 const INLINE_RE =
-  /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(__[^_\n]+__)|(\*[^*\n]+\*)|(\[[^\]\n]*\]\([^)\s]+\))/g
+  /(!\[[^\]\n]*\]\([^)\s]+\))|(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(__[^_\n]+__)|(\*[^*\n]+\*)|(\[[^\]\n]*\]\([^)\s]+\))/g
 
 function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
   const nodes: React.ReactNode[] = []
@@ -39,7 +88,17 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
 
     const key = `${keyPrefix}-i${counter++}`
 
-    if (token.startsWith('`')) {
+    if (token.startsWith('![')) {
+      const parts = IMAGE_TOKEN_RE.exec(token)
+      const alt = parts?.[1] ?? ''
+      const src = safeSrc(parts?.[2] ?? '')
+
+      if (src) {
+        nodes.push(<MarkdownImage key={key} src={src} alt={alt} />)
+      } else if (alt) {
+        nodes.push(alt)
+      }
+    } else if (token.startsWith('`')) {
       nodes.push(
         <code
           key={key}
@@ -105,6 +164,7 @@ function isBlockStart(line: string): boolean {
   return (
     line.trim() === '' ||
     /^\s*(#{1,6}\s|>|[-*+]\s|\d+[.)]\s|```)/.test(line) ||
+    IMAGE_LINE_RE.test(line) ||
     line.trim().startsWith('|')
   )
 }
@@ -141,6 +201,43 @@ function parseBlocks(source: string): React.ReactNode[] {
     // Blank line
     if (line.trim() === '') {
       i++
+      continue
+    }
+
+    // Standalone image(s). Consecutive image-only lines are grouped so a
+    // product carousel from the agent reads as a gallery, not a stack.
+    if (IMAGE_LINE_RE.test(line)) {
+      const images: { src: string; alt: string }[] = []
+
+      while (i < lines.length && IMAGE_LINE_RE.test(lines[i] ?? '')) {
+        const parts = IMAGE_TOKEN_RE.exec(lines[i] ?? '')
+        const src = safeSrc(parts?.[2] ?? '')
+        if (src) images.push({ src, alt: parts?.[1] ?? '' })
+        i++
+      }
+
+      if (images.length > 0) {
+        const k = key++
+        out.push(
+          <div
+            key={`b${k}`}
+            className={
+              images.length > 1
+                ? 'my-2 grid grid-cols-2 gap-2'
+                : 'my-2 block'
+            }
+          >
+            {images.map((image, index) => (
+              <MarkdownImage
+                key={index}
+                src={image.src}
+                alt={image.alt}
+                block
+              />
+            ))}
+          </div>
+        )
+      }
       continue
     }
 
