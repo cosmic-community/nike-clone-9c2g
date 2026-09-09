@@ -1,15 +1,23 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import Markdown from '@/components/Markdown'
+import { parseAgentMessage } from '@/lib/quick-replies'
 
 interface ChatMessage {
   role: 'user' | 'agent'
   text: string
+  quickReplies?: string[]
 }
 
 const GREETING: ChatMessage = {
   role: 'agent',
-  text: "Hey, I'm Leo. Ask me anything about our products — sizing, materials, what to pick for your sport.",
+  text: "Hey, I'm **Leo**. Ask me anything about our products — sizing, materials, what to pick for your sport.",
+  quickReplies: [
+    'What should I wear for running?',
+    'How do your sizes fit?',
+    'What are your shoes made of?',
+  ],
 }
 
 export default function ChatWidget() {
@@ -43,10 +51,8 @@ export default function ChatWidget() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
-  async function handleSubmit(event: React.FormEvent) {
-    event.preventDefault()
-
-    const trimmed = input.trim()
+  async function sendMessage(raw: string) {
+    const trimmed = raw.trim()
     if (!trimmed || sending) return
 
     setMessages((prev) => [...prev, { role: 'user', text: trimmed }])
@@ -75,13 +81,36 @@ export default function ChatWidget() {
         setConversationId(data.conversation_id)
       }
 
-      setMessages((prev) => [...prev, { role: 'agent', text: data.reply }])
+      const replyText = typeof data.reply === 'string' ? data.reply : ''
+
+      if (!replyText.trim()) {
+        setError('Leo did not send a reply. Please try again.')
+        return
+      }
+
+      const { body, quickReplies } = parseAgentMessage(replyText)
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'agent',
+          text: body,
+          ...(quickReplies.length > 0 ? { quickReplies } : {}),
+        },
+      ])
     } catch {
       setError('Could not reach the chat service. Please try again.')
     } finally {
       setSending(false)
     }
   }
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault()
+    await sendMessage(input)
+  }
+
+  const lastIndex = messages.length - 1
 
   return (
     <>
@@ -122,22 +151,45 @@ export default function ChatWidget() {
           </div>
 
           <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
-            {messages.map((message, index) => (
-              <div
-                key={index}
-                className={message.role === 'user' ? 'flex justify-end' : 'flex justify-start'}
-              >
-                <div
-                  className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${
-                    message.role === 'user'
-                      ? 'bg-black text-white'
-                      : 'bg-gray-100 text-black'
-                  }`}
-                >
-                  {message.text}
+            {messages.map((message, index) => {
+              const isUser = message.role === 'user'
+              const showQuickReplies =
+                !isUser &&
+                index === lastIndex &&
+                !sending &&
+                (message.quickReplies?.length ?? 0) > 0
+
+              return (
+                <div key={index} className="space-y-2">
+                  <div className={isUser ? 'flex justify-end' : 'flex justify-start'}>
+                    <div
+                      className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${
+                        isUser
+                          ? 'whitespace-pre-wrap bg-black text-white'
+                          : 'bg-gray-100 text-black'
+                      }`}
+                    >
+                      {isUser ? message.text : <Markdown content={message.text} />}
+                    </div>
+                  </div>
+
+                  {showQuickReplies && (
+                    <div className="flex flex-wrap gap-2">
+                      {(message.quickReplies ?? []).map((label) => (
+                        <button
+                          key={label}
+                          type="button"
+                          onClick={() => void sendMessage(label)}
+                          className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-black transition-colors hover:border-black hover:bg-black hover:text-white focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-1"
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              )
+            })}
 
             {sending && (
               <div className="flex justify-start">
