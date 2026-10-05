@@ -3,7 +3,7 @@ import type { Metadata } from 'next'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import CosmicBadge from '@/components/CosmicBadge'
-import ChatWidget from '@/components/ChatWidget'
+import Script from 'next/script'
 import { CartProvider } from '@/lib/cart'
 
 export const metadata: Metadata = {
@@ -36,7 +36,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <main className="flex-1">{children}</main>
           <Footer />
         </CartProvider>
-        <ChatWidget />
+        <Script
+          src="https://www.cosmicjs.com/agent.js"
+          data-key="pk_03b207342c93ec8e8431244e4f108548"
+          strategy="afterInteractive"
+        />
         <CosmicBadge bucketSlug={bucketSlug} />
       </body>
     </html>
