@@ -1,5 +1,4 @@
 import type { Metadata } from 'next'
-import Script from 'next/script'
 
 export const metadata: Metadata = {
   title: 'Chat | SWSH.',
@@ -16,11 +15,16 @@ export default function ChatPage() {
 
       <div id="chat" style={{ height: '70vh' }} />
 
-      <Script
+      {/*
+        Must be a plain <script> rendered into the server HTML, NOT next/script.
+        agent.js reads its own data-* attributes from document.currentScript,
+        which is null for dynamically-injected scripts (what next/script does).
+      */}
+      <script
         src="https://www.cosmicjs.com/agent.js"
         data-key="pk_03b207342c93ec8e8431244e4f108548"
         data-target="#chat"
-        strategy="afterInteractive"
+        async
       />
     </div>
   )
