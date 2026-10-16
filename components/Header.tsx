@@ -36,6 +36,12 @@ export default async function Header() {
             >
               Categories
             </Link>
+            <Link
+              href="/chat"
+              className="text-sm font-semibold uppercase tracking-wide hover:text-accent transition-colors"
+            >
+              Chat
+            </Link>
           </nav>
 
           <div className="flex items-center gap-1">

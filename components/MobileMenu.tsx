@@ -47,6 +47,13 @@ export default function MobileMenu({ categories }: MobileMenuProps) {
             >
               Categories
             </Link>
+            <Link
+              href="/chat"
+              onClick={() => setIsOpen(false)}
+              className="text-lg font-bold uppercase tracking-wide py-2 border-b border-gray-100"
+            >
+              Chat
+            </Link>
           </nav>
         </div>
       )}
