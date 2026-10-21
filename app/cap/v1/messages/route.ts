@@ -111,7 +111,7 @@ export async function POST(request: Request) {
       data.status = 'failed'
       data.error = {
         code: 'login_required',
-        message: 'This needs your SWSH. account. Log in so I can look up your orders.',
+        message: 'Log in to your account so I can look up your orders.',
       }
     } else {
       try {
