@@ -1,70 +1,81 @@
-// Server-only helper that asks the store's Cosmic agent a question.
-const AGENT_ID = process.env.COSMIC_AGENT_ID || '6aa0bf3ca2574094a7d34fed'
-const AGENT_ENDPOINT = `https://dapi.cosmicjs.com/v3/ai/agents/${AGENT_ID}/messages`
+// Asks Leo through his public CAP door. No agent API token.
+const CAP_BASE = (
+  process.env.CAP_AGENT_URL || 'https://dapi.cosmicjs.com/cap/v1/ck_4b83e9c84a6af46660f49bc5492b7c9d'
+).replace(/\/$/, '')
+const CAP_FROM = 'agent:swsh'
+const WAIT_BUDGET_MS = 45_000
 
-function pickString(values: unknown[]): string | null {
-  for (const value of values) {
-    if (typeof value === 'string' && value.trim()) return value
-    if (value && typeof value === 'object') {
-      const nested = (value as Record<string, unknown>).content ?? (value as Record<string, unknown>).text
-      if (typeof nested === 'string' && nested.trim()) return nested
-    }
-  }
-  return null
+interface CapReply {
+  id?: string
+  status?: 'working' | 'done' | 'failed'
+  reply?: string
+  error?: { code?: string; message?: string }
 }
 
+function capHeaders(): HeadersInit {
+  return {
+    'Content-Type': 'application/json',
+    'CAP-Version': '1.0',
+    'CAP-From': CAP_FROM,
+  }
+}
+
+async function readCap(response: Response): Promise<CapReply> {
+  const raw = await response.text()
+  let data: CapReply = {}
+  try {
+    data = raw ? (JSON.parse(raw) as CapReply) : {}
+  } catch {
+    throw new Error(`CAP reply was not JSON (${response.status})`)
+  }
+  if (!response.ok && response.status !== 202) {
+    throw new Error(data.error?.message || `CAP request failed (${response.status})`)
+  }
+  return data
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Sends one question to Leo and waits until the message is finished.
+ * `previousMessageId` is Leo's last message id, so a thread stays on his side.
+ */
 export async function askAgent(
   message: string,
-  conversationId?: string
+  previousMessageId?: string
 ): Promise<{ reply: string; conversationId: string | null }> {
-  const token = process.env.COSMIC_AGENT_TOKEN
-  if (!token) throw new Error('COSMIC_AGENT_TOKEN is not set')
+  const payload: Record<string, string> = { message }
+  if (previousMessageId) payload.previous_message_id = previousMessageId
 
-  const payload: Record<string, unknown> = { message }
-  if (conversationId) payload.conversation_id = conversationId
-
-  const upstream = await fetch(AGENT_ENDPOINT, {
+  const started = Date.now()
+  let response = await fetch(`${CAP_BASE}/messages`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    headers: capHeaders(),
     body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(25000),
+    signal: AbortSignal.timeout(30_000),
   })
+  let capMessage = await readCap(response)
 
-  const raw = await upstream.text()
-  if (!upstream.ok) throw new Error(`agent request failed (${upstream.status}): ${raw.slice(0, 300)}`)
-
-  let parsed: unknown = raw
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    // plain text reply
+  while (capMessage.status === 'working' && Date.now() - started < WAIT_BUDGET_MS) {
+    const retryAfter = Number(response.headers.get('retry-after'))
+    const delay = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 5_000) : 1_000
+    await wait(delay)
+    const location = response.headers.get('location')
+    const url = location ? new URL(location, response.url).toString() : `${CAP_BASE}/messages/${capMessage.id}`
+    response = await fetch(url, {
+      headers: { 'CAP-Version': '1.0', 'CAP-From': CAP_FROM },
+      signal: AbortSignal.timeout(30_000),
+    })
+    capMessage = await readCap(response)
   }
 
-  if (typeof parsed === 'string') return { reply: parsed, conversationId: conversationId ?? null }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const data = (parsed ?? {}) as Record<string, any>
-  const reply = pickString([
-    data.reply,
-    data.message,
-    data.content,
-    data.text,
-    data.response,
-    data.output,
-    data.data?.reply,
-    data.data?.message,
-    data.data?.content,
-    data.choices?.[0]?.message?.content,
-  ])
-  if (!reply) throw new Error(`agent reply missing: ${raw.slice(0, 300)}`)
-
-  const nextConversation = pickString([
-    data.conversation_id,
-    data.conversationId,
-    data.thread_id,
-    data.data?.conversation_id,
-    data.data?.conversationId,
-  ])
-
-  return { reply, conversationId: nextConversation ?? conversationId ?? null }
+  if (capMessage.status === 'done' && capMessage.reply?.trim()) {
+    return { reply: capMessage.reply.trim(), conversationId: capMessage.id || previousMessageId || null }
+  }
+  if (capMessage.status === 'failed') {
+    throw new Error(capMessage.error?.message || 'Leo could not answer')
+  }
+  throw new Error('Leo did not finish in time')
 }

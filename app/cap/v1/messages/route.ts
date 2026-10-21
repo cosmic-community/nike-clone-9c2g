@@ -15,6 +15,22 @@ const MAX_TURNS = 30
 const ACCOUNT_HINT =
   /\b(my|mine)\b[\s\S]{0,40}\b(orders?|account|purchases?|shipments?|deliver(y|ies)|returns?|refunds?)\b|\border status\b/i
 
+/** Order and account facts for a granted shopper. No model call, no internal ids. */
+async function describeAccount(accountId: string): Promise<string> {
+  const [customer, orders] = await Promise.all([getCustomerById(accountId), getOrdersForCustomer(accountId)])
+  const who = [customer?.name?.trim(), customer?.email?.trim()].filter(Boolean).join(', ') || 'this account'
+  const recent = orders.slice(0, 20)
+  if (recent.length === 0) {
+    return `Signed in as ${who}. There are no orders on this account yet.`
+  }
+  const lines = recent.map((order) => {
+    const when = order.created_at ? order.created_at.slice(0, 10) : 'Undated'
+    const items = order.items.map((item) => `${item.quantity}× ${item.description}`).join(', ')
+    return `- ${when} · ${order.status} · ${formatMoney(order.amount_total, order.currency)}${items ? ` · ${items}` : ''}`
+  })
+  return `Signed in as ${who}. Orders, newest first:\n${lines.join('\n')}`
+}
+
 async function buildPrompt(
   text: string,
   context: Record<string, unknown> | undefined,
@@ -34,9 +50,10 @@ async function buildPrompt(
       return `- ${order.created_at.slice(0, 10)} · ${order.status} · ${formatMoney(order.amount_total, order.currency)} · ${items}`
     })
     parts.push(
-      `The shopper is logged in (verified). Name: ${customer?.name || 'n/a'}. Email: ${customer?.email || 'n/a'}.`,
-      lines.length ? `Their orders, newest first:\n${lines.join('\n')}` : 'They have no orders yet.',
-      'Only discuss this shopper\'s own account. You cannot place orders or make changes for them; send them to the website for that.'
+      'This store already checked the shopper\'s account. Answer from the record below. Do not ask them to log in.',
+      `Name: ${customer?.name || 'n/a'}. Email: ${customer?.email || 'n/a'}.`,
+      lines.length ? `Orders, newest first:\n${lines.join('\n')}` : 'Orders: none.',
+      'Only discuss this shopper\'s own account. You cannot place orders or change the account; send them to the website for that.'
     )
   }
 
@@ -107,7 +124,8 @@ export async function POST(request: Request) {
       turn,
     }
 
-    if (!caller.account && ACCOUNT_HINT.test(text)) {
+    const accountQuestion = ACCOUNT_HINT.test(text)
+    if (!caller.account && accountQuestion) {
       data.status = 'failed'
       data.error = {
         code: 'login_required',
@@ -122,8 +140,19 @@ export async function POST(request: Request) {
         data.conversation_id = result.conversationId
       } catch (error) {
         console.error('[cap] answer failed', error)
-        data.status = 'failed'
-        data.error = { code: 'unavailable', message: 'The store assistant could not answer right now. Try again shortly.' }
+        if (caller.account && accountQuestion) {
+          try {
+            data.status = 'done'
+            data.reply = await describeAccount(caller.account)
+          } catch (lookupError) {
+            console.error('[cap] account lookup failed', lookupError)
+            data.status = 'failed'
+            data.error = { code: 'unavailable', message: 'The store assistant could not answer right now. Try again shortly.' }
+          }
+        } else {
+          data.status = 'failed'
+          data.error = { code: 'unavailable', message: 'The store assistant could not answer right now. Try again shortly.' }
+        }
       }
     }
     data.finished_at = new Date().toISOString()
