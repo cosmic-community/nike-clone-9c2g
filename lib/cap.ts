@@ -51,9 +51,10 @@ export async function authenticateCap(request: Request): Promise<CapCaller | Nex
   if (!authorization) return { capFrom, account: null }
 
   const match = authorization.match(/^Bearer\s+(\S+)$/i)
-  if (!match) return capError('invalid_request', 'Authorization must be a Bearer token.', 400)
+  const token = match?.[1]
+  if (!token) return capError('invalid_request', 'Authorization must be a Bearer token.', 400)
 
-  const payload = verifyToken<AccessPayload>(match[1], 'cap_access')
+  const payload = verifyToken<AccessPayload>(token, 'cap_access')
   if (!payload) return capError('unauthorized', 'This login has expired. Please log in again.', 401)
   if (payload.cap !== capFrom) return capError('forbidden', 'This login belongs to a different agent.', 403)
 
