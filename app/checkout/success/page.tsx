@@ -1,6 +1,10 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import ClearCartOnMount from '@/components/ClearCartOnMount'
+import { getCurrentCustomer } from '@/lib/auth'
+import { recordOrderFromSession } from '@/lib/orders'
+
+export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
   title: 'Order Confirmed | SWSH.',
@@ -13,6 +17,15 @@ export default async function CheckoutSuccessPage({
   searchParams: Promise<{ session_id?: string }>
 }) {
   const { session_id } = await searchParams
+  const customer = await getCurrentCustomer()
+
+  if (session_id && customer) {
+    try {
+      await recordOrderFromSession(session_id, customer)
+    } catch (error) {
+      console.error('[checkout] could not record order', error)
+    }
+  }
 
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-24 text-center">
@@ -38,6 +51,14 @@ export default async function CheckoutSuccessPage({
       </p>
       {session_id && (
         <p className="text-xs text-gray-400 mb-8 break-all">Reference: {session_id}</p>
+      )}
+
+      {customer && (
+        <p className="mb-6">
+          <Link href="/account" className="underline font-semibold">
+            View your orders
+          </Link>
+        </p>
       )}
 
       <Link

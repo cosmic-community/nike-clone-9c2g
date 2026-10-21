@@ -39,6 +39,12 @@ export default async function Header() {
           </nav>
 
           <div className="flex items-center gap-1">
+            <Link
+              href="/account"
+              className="px-2 text-sm font-semibold uppercase tracking-wide hover:text-accent transition-colors"
+            >
+              Account
+            </Link>
             <CartBadge />
             <MobileMenu categories={categories} />
           </div>

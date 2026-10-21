@@ -69,3 +69,20 @@ export async function stripeRequest<T>(
 
   return payload
 }
+
+export async function stripeGet<T>(path: string): Promise<T> {
+  const response = await fetch(`${STRIPE_API}${path}`, {
+    headers: { Authorization: `Bearer ${getStripeSecretKey()}` },
+    cache: 'no-store',
+  })
+
+  const payload = (await response.json()) as T & {
+    error?: { message?: string }
+  }
+
+  if (!response.ok) {
+    throw new Error(payload?.error?.message || `Stripe request failed (${response.status})`)
+  }
+
+  return payload
+}

@@ -22,6 +22,11 @@ export default function CartView() {
         }),
       })
 
+      if (response.status === 401) {
+        window.location.href = '/account?next=/cart'
+        return
+      }
+
       const data = (await response.json()) as { url?: string; error?: string }
 
       if (!response.ok || !data.url) {
