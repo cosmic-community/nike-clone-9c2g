@@ -9,7 +9,7 @@ export function GET(request: Request) {
     'Protocol: CAP/1.0',
     'Name: Leo',
     `Chat: ${origin}/`,
-    `CAP: https://dapi.cosmicjs.com/cap/v1/ck_4b83e9c84a6af46660f49bc5492b7c9d`,
+    `CAP: ${origin}/cap/v1`,
     `OAuth: ${origin}/oauth`,
     'Spec: https://conciergeprotocol.org/cap.txt',
     '',
