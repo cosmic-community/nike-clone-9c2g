@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { stripeRequest } from '@/lib/stripe'
+import { getCurrentCustomer } from '@/lib/auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -22,6 +23,11 @@ function getOrigin(request: Request): string {
 
 export async function POST(request: Request) {
   try {
+    const customer = await getCurrentCustomer()
+    if (!customer) {
+      return NextResponse.json({ error: 'Please sign in to check out.' }, { status: 401 })
+    }
+
     const body = (await request.json()) as { items?: unknown }
 
     if (!Array.isArray(body.items) || body.items.length === 0) {
@@ -55,6 +61,9 @@ export async function POST(request: Request) {
       cancel_url: `${origin}/cart`,
       billing_address_collection: 'auto',
       shipping_address_collection: { allowed_countries: ['US', 'CA', 'GB', 'AU'] },
+      client_reference_id: customer.id,
+      customer_email: customer.email,
+      metadata: { customer_id: customer.id },
     })
 
     if (!session.url) {
