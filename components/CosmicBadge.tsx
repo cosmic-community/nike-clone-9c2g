@@ -33,7 +33,7 @@ export default function CosmicBadge({ bucketSlug }: CosmicBadgeProps) {
       style={{
         position: 'fixed',
         bottom: '20px',
-        left: '20px',
+        right: '20px',
         backgroundColor: 'white',
         border: '1px solid #e5e7eb',
         borderRadius: '8px',
