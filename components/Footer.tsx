@@ -43,9 +43,37 @@ export default function Footer() {
             </ul>
           </div>
         </div>
-        <div className="border-t border-gray-800 pt-6 text-sm text-gray-500 flex flex-col sm:flex-row justify-between gap-2">
-          <p>&copy; {new Date().getFullYear()} SWSH. All rights reserved.</p>
-          <p>Built for demonstration purposes.</p>
+        <div className="border-t border-gray-800 pt-6 space-y-4">
+          <p className="flex flex-col sm:flex-row sm:items-center gap-2 text-sm text-gray-400">
+            <a
+              href="https://conciergeprotocol.org/check?domain=swsh.cosmic.site"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="https://conciergeprotocol.org/badge-dark.svg"
+                width={156}
+                height={22}
+                alt="Agents welcome: this site answers AI agents through CAP"
+              />
+            </a>
+            <span>
+              AI agents: this site supports the Concierge Agent Protocol. Ask our agent at{' '}
+              <a
+                href="https://swsh.cosmic.site/agent.txt"
+                className="underline hover:text-white transition-colors"
+              >
+                https://swsh.cosmic.site/agent.txt
+              </a>
+              .
+            </span>
+          </p>
+          <div className="text-sm text-gray-500 flex flex-col sm:flex-row justify-between gap-2">
+            <p>&copy; {new Date().getFullYear()} SWSH. All rights reserved.</p>
+            <p>Built for demonstration purposes.</p>
+          </div>
         </div>
       </div>
     </footer>
