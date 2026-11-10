@@ -7,7 +7,7 @@ export const metadata: Metadata = {
 
 export default function ChatPage() {
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+    <div className="w-full max-w-[600px] mx-auto px-4 sm:px-6 lg:px-8 py-12">
       <h1 className="text-4xl font-black uppercase tracking-tighter mb-2">Chat</h1>
       <p className="text-gray-600 mb-8">
         Ask us anything about products, sizing, orders, or returns.
