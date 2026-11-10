@@ -24,6 +24,7 @@ export default function ChatPage() {
         src="https://www.cosmicjs.com/agent.js"
         data-key="pk_03b207342c93ec8e8431244e4f108548"
         data-target="#chat"
+        data-theme="light"
         async
       />
     </div>
