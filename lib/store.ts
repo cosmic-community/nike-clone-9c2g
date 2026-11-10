@@ -34,6 +34,8 @@ export async function findMany(
     return response.objects ?? []
   } catch (error) {
     if (hasStatus(error) && error.status === 404) return []
+    // A managed type that has not been created yet answers a metadata query with 400.
+    if (hasStatus(error) && error.status === 400 && type in MANAGED_TYPES) return []
     throw error
   }
 }
@@ -51,14 +53,79 @@ export async function getById(type: string, id: string): Promise<StoredObject | 
   return findFirst(type, { id })
 }
 
+interface LooseObjectTypesApi {
+  insertOne(data: Record<string, unknown>): Promise<unknown>
+}
+
+type MetafieldType = 'text' | 'json'
+
+// Types this app creates on first write. Cosmic rejects metadata keys that are not
+// metafields on the type, so every key written to these types must be listed here.
+const MANAGED_TYPES: Record<string, { title: string; singular: string; fields: Record<string, MetafieldType> }> = {
+  carts: {
+    title: 'Carts',
+    singular: 'Cart',
+    fields: { customer_id: 'text', items: 'json' },
+  },
+  'cap-confirmations': {
+    title: 'CAP Confirmations',
+    singular: 'CAP Confirmation',
+    fields: {
+      confirmation_id: 'text',
+      cap_from: 'text',
+      client_name: 'text',
+      account: 'text',
+      status: 'text',
+      summary: 'text',
+      authorization_details: 'json',
+      lines: 'json',
+      source: 'text',
+      expires_at: 'text',
+      stripe_session_id: 'text',
+      stripe_session_url: 'text',
+      result: 'json',
+    },
+  },
+}
+
+async function createManagedType(type: string): Promise<boolean> {
+  const spec = MANAGED_TYPES[type]
+  if (!spec) return false
+  const api = cosmic.objectTypes as unknown as LooseObjectTypesApi
+  try {
+    await api.insertOne({
+      title: spec.title,
+      slug: type,
+      singular: spec.singular,
+      metafields: Object.entries(spec.fields).map(([key, fieldType]) => ({
+        title: key.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase()),
+        key,
+        type: fieldType,
+        required: false,
+      })),
+    })
+  } catch (error) {
+    // Another request may have created it first. The retry decides.
+    console.error(`[store] could not create object type ${type}`, error)
+  }
+  return true
+}
+
 export async function insertObject(
   type: string,
   title: string,
   metadata: Record<string, unknown>
 ): Promise<StoredObject> {
   const api = cosmic.objects as unknown as LooseObjectsApi
-  const response = await api.insertOne({ type, title, metadata, status: 'published' })
-  return response.object
+  try {
+    const response = await api.insertOne({ type, title, metadata, status: 'published' })
+    return response.object
+  } catch (error) {
+    const missingType = hasStatus(error) && error.status === 400 && String((error as { message?: unknown }).message ?? '').includes("valid 'type'")
+    if (!missingType || !(await createManagedType(type))) throw error
+    const response = await api.insertOne({ type, title, metadata, status: 'published' })
+    return response.object
+  }
 }
 
 export async function updateMetadata(

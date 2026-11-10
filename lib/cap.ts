@@ -7,6 +7,8 @@ import { getById } from '@/lib/store'
 export interface CapCaller {
   capFrom: string
   account: string | null
+  scope: string | null
+  clientName: string
 }
 
 export interface CapMessageData {
@@ -19,6 +21,7 @@ export interface CapMessageData {
   // Internal only, never returned to callers:
   conversation_id?: string | null
   turn?: number
+  confirmation_id?: string
 }
 
 export function capError(code: string, message: string, status: number) {
@@ -26,12 +29,13 @@ export function capError(code: string, message: string, status: number) {
 }
 
 /** Only the fields the spec allows. Never internal ids. */
-export function toPublic(data: CapMessageData) {
+export function toPublic(data: CapMessageData, confirmation?: Record<string, unknown> | null) {
   return {
     id: data.id,
     status: data.status,
     ...(data.status === 'done' && data.reply ? { reply: data.reply } : {}),
     ...(data.status === 'failed' && data.error ? { error: data.error } : {}),
+    ...(data.status === 'done' && confirmation ? { confirmation } : {}),
     created_at: data.created_at,
     ...(data.finished_at ? { finished_at: data.finished_at } : {}),
   }
@@ -48,7 +52,7 @@ export async function authenticateCap(request: Request): Promise<CapCaller | Nex
   }
 
   const authorization = request.headers.get('authorization')
-  if (!authorization) return { capFrom, account: null }
+  if (!authorization) return { capFrom, account: null, scope: null, clientName: '' }
 
   const match = authorization.match(/^Bearer\s+(\S+)$/i)
   const token = match?.[1]
@@ -63,5 +67,10 @@ export async function authenticateCap(request: Request): Promise<CapCaller | Nex
     return capError('unauthorized', 'This login was revoked. Please log in again.', 401)
   }
 
-  return { capFrom, account: payload.sub }
+  return {
+    capFrom,
+    account: payload.sub,
+    scope: payload.scope || 'read',
+    clientName: String(login.metadata.client_name || ''),
+  }
 }

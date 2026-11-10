@@ -13,6 +13,6 @@ export function GET(request: Request) {
     revocation_endpoint: `${origin}/oauth/revoke`,
     grant_types_supported: ['urn:ietf:params:oauth:grant-type:device_code', 'refresh_token'],
     token_endpoint_auth_methods_supported: ['none'],
-    scopes_supported: ['read'],
+    scopes_supported: ['read', 'write'],
   })
 }

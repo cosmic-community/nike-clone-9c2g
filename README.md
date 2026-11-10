@@ -73,6 +73,17 @@ COSMIC_WRITE_KEY=your-write-key
 bun run dev
 ```
 
+## Agent checkout (CAP)
+
+The store answers AI agents through the [Concierge Agent Protocol](https://conciergeprotocol.org/spec). `agent.txt` points at the CAP door at `/cap/v1` and the login at `/oauth`.
+
+- **Logins.** An agent logs the shopper in with the OAuth device code. When it asks for `scope=write`, the shopper chooses **Allow changes**, **Read only**, or **Deny**. Write tokens last 15 minutes.
+- **Bag.** A signed-in shopper's bag is stored on the server (`carts`), so the bag in the browser and the bag the agent changes are the same. With a write login, an agent can say "add the Pegasus 41 in size 10 to my bag", "remove the Volt one", or "what's in my bag?".
+- **Checkout.** "Check out" or "buy the Metcon 10 in size 11" never charges. The store prices the order from Stripe, holds it in `cap-confirmations`, and answers with a `confirmation` whose `authorization_details` is a `purchase`. The shopper opens `/confirm/{id}`, reviews the order, and pays on Stripe Checkout. The agent reads `GET /cap/v1/confirmations/{id}` until it is `done`, and `result.reference` is the order number.
+- **Webhook.** Point a Stripe webhook at `/api/stripe/webhook` with `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, and `checkout.session.expired`, and set `STRIPE_WEBHOOK_SECRET`. Locally: `stripe listen --forward-to localhost:3000/api/stripe/webhook`.
+
+The `carts` and `cap-confirmations` object types are created in your bucket on first use.
+
 ## Cosmic SDK Examples
 
 ```typescript

@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { authenticateCap, capError, toPublic, type CapMessageData } from '@/lib/cap'
+import { messageConfirmation } from '@/lib/confirmations'
+import { siteOrigin } from '@/lib/oauth'
 import { findFirst } from '@/lib/store'
 
 export const runtime = 'nodejs'
@@ -20,5 +22,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     return capError('not_found', 'That message was not found.', 404)
   }
 
-  return NextResponse.json(toPublic(stored.metadata.data as CapMessageData))
+  const data = stored.metadata.data as CapMessageData
+  return NextResponse.json(toPublic(data, await messageConfirmation(data, siteOrigin(request))))
 }
