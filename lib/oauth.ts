@@ -5,7 +5,13 @@ import { randomToken, sha256, signToken } from '@/lib/auth'
 import { findFirst, updateMetadata, type StoredObject } from '@/lib/store'
 
 export const ACCESS_TTL = 60 * 60 // 1 hour
+export const WRITE_ACCESS_TTL = 15 * 60 // write logins stay short
 export const DEVICE_TTL = 10 * 60 // 10 minutes
+
+/** `read` or `read write`. Write always includes read. */
+export function hasWrite(scope: string | null | undefined): boolean {
+  return String(scope || '').split(/\s+/).includes('write')
+}
 const USER_CODE_ALPHABET = 'BCDFGHJKLMNPQRSTVWXZ'
 
 export interface AccessPayload {
@@ -67,14 +73,15 @@ export async function findPendingLogin(userCode: string): Promise<StoredObject |
 /** Issues an access + refresh token pair and rotates the stored refresh hash. */
 export async function issueTokens(login: StoredObject) {
   const refreshToken = randomToken(32)
-  const scope = String(login.metadata.scope || 'read')
+  const scope = hasWrite(String(login.metadata.scope)) ? 'read write' : 'read'
+  const ttl = hasWrite(scope) ? WRITE_ACCESS_TTL : ACCESS_TTL
   const payload: AccessPayload = {
     kind: 'cap_access',
     sub: String(login.metadata.account),
     cap: String(login.metadata.cap_from),
     lid: login.id,
     scope,
-    exp: Math.floor(Date.now() / 1000) + ACCESS_TTL,
+    exp: Math.floor(Date.now() / 1000) + ttl,
   }
   const accessToken = signToken({ ...payload })
 
@@ -88,7 +95,7 @@ export async function issueTokens(login: StoredObject) {
     {
       access_token: accessToken,
       token_type: 'Bearer',
-      expires_in: ACCESS_TTL,
+      expires_in: ttl,
       refresh_token: refreshToken,
       scope,
     },

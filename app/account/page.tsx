@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import AuthForm from '@/components/AuthForm'
 import { getCurrentCustomer, safeNext } from '@/lib/auth'
 import { formatMoney, getOrdersForCustomer } from '@/lib/orders'
+import { hasWrite } from '@/lib/oauth'
 import { findMany } from '@/lib/store'
 
 export const dynamic = 'force-dynamic'
@@ -67,7 +68,7 @@ export default async function AccountPage({
       )}
 
       <h2 className="text-xl font-black uppercase tracking-tight mb-2">Connected AI agents</h2>
-      <p className="text-sm text-gray-500 mb-4">Agents you allowed to read your account. Disconnecting stops them right away.</p>
+      <p className="text-sm text-gray-500 mb-4">Agents you allowed into your account. Disconnecting stops them right away.</p>
       {agents.length === 0 ? (
         <p className="text-gray-600">None.</p>
       ) : (
@@ -77,6 +78,9 @@ export default async function AccountPage({
               <div>
                 <p className="font-semibold">{String(agent.metadata.client_name || 'AI agent')}</p>
                 <p className="text-xs text-gray-500 font-mono">{String(agent.metadata.cap_from)}</p>
+                <p className="text-xs text-gray-500">
+                  {hasWrite(String(agent.metadata.scope)) ? 'Can read and change your bag' : 'Read only'}
+                </p>
               </div>
               <form method="POST" action="/api/account/agents/revoke">
                 <input type="hidden" name="login_id" value={agent.id} />

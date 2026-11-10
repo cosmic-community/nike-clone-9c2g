@@ -3,7 +3,10 @@ import { NextResponse } from 'next/server'
 import { getCustomerById, sha256 } from '@/lib/auth'
 import { askAgent } from '@/lib/agent'
 import { authenticateCap, capError, toPublic, type CapMessageData } from '@/lib/cap'
+import { confirmUrl, holdPurchase, messageConfirmation, publicConfirmation, ShopError } from '@/lib/confirmations'
+import { siteOrigin } from '@/lib/oauth'
 import { formatMoney, getOrdersForCustomer } from '@/lib/orders'
+import { runShopAction } from '@/lib/shop-actions'
 import { findFirst, insertObject } from '@/lib/store'
 
 export const runtime = 'nodejs'
@@ -53,7 +56,7 @@ async function buildPrompt(
       'This store already checked the shopper\'s account. Answer from the record below. Do not ask them to log in.',
       `Name: ${customer?.name || 'n/a'}. Email: ${customer?.email || 'n/a'}.`,
       lines.length ? `Orders, newest first:\n${lines.join('\n')}` : 'Orders: none.',
-      'Only discuss this shopper\'s own account. You cannot place orders or change the account; send them to the website for that.'
+      'Only discuss this shopper\'s own account. Do not say you changed their bag or placed an order. If they want to, tell them to ask to add the item to their bag or to check out.'
     )
   }
 
@@ -90,7 +93,10 @@ export async function POST(request: Request) {
     const scopedKey = idempotencyKey ? sha256(`${caller.capFrom}|${caller.account ?? ''}|${idempotencyKey}`) : ''
     if (scopedKey) {
       const existing = await findFirst('cap-messages', { 'metadata.idempotency_key': scopedKey })
-      if (existing) return NextResponse.json(toPublic(existing.metadata.data as CapMessageData))
+      if (existing) {
+        const stored = existing.metadata.data as CapMessageData
+        return NextResponse.json(toPublic(stored, await messageConfirmation(stored, siteOrigin(request))))
+      }
     }
 
     let conversationId: string | undefined
@@ -124,8 +130,40 @@ export async function POST(request: Request) {
       turn,
     }
 
+    const origin = siteOrigin(request)
+    let confirmation: Record<string, unknown> | null = null
+    let handled = true
+    try {
+      const shop = await runShopAction(caller, text, context)
+      if (shop.kind === 'none') {
+        handled = false
+      } else if (shop.kind === 'confirm') {
+        const held = await holdPurchase(caller, shop.items, shop.source)
+        confirmation = publicConfirmation(held, origin)
+        data.confirmation_id = String(held.metadata.confirmation_id)
+        data.status = 'done'
+        data.reply = `${held.metadata.summary} Nothing is charged until you approve and pay here: ${confirmUrl(origin, data.confirmation_id)}`
+      } else if (shop.kind === 'reply') {
+        data.status = 'done'
+        data.reply = shop.reply
+      } else if (shop.kind === 'error') {
+        data.status = 'failed'
+        data.error = { code: shop.code, message: shop.message }
+      }
+    } catch (error) {
+      console.error('[cap] shop action failed', error)
+      data.status = 'failed'
+      data.error = {
+        code: 'unavailable',
+        message: error instanceof ShopError ? error.message : 'The store could not do that right now. Try again shortly.',
+      }
+    }
+
     const accountQuestion = ACCOUNT_HINT.test(text)
-    if (!caller.account && accountQuestion) {
+    if (handled) {
+      // Keep Leo's thread for the next turn.
+      data.conversation_id = conversationId ?? null
+    } else if (!caller.account && accountQuestion) {
       data.status = 'failed'
       data.error = {
         code: 'login_required',
@@ -169,7 +207,7 @@ export async function POST(request: Request) {
       console.error('[cap] could not store message', error)
     }
 
-    return NextResponse.json(toPublic(data))
+    return NextResponse.json(toPublic(data, confirmation))
   } catch (error) {
     console.error('[cap] unexpected error', error)
     return capError('unavailable', 'The store assistant is not answering right now.', 503)

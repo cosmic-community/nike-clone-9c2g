@@ -14,9 +14,10 @@ export async function POST(request: Request) {
   }
 
   const requested = (form.get('scope') || 'read').trim().split(/\s+/).filter(Boolean)
-  if (requested.some((scope) => scope !== 'read')) {
-    return oauthError('invalid_scope', 'This store offers read access only.')
+  if (requested.some((scope) => scope !== 'read' && scope !== 'write')) {
+    return oauthError('invalid_scope', 'This store offers read and write access.')
   }
+  const wantsWrite = requested.includes('write')
 
   const clientName = (form.get('client_name') || '').trim().slice(0, 80)
   const deviceCode = randomToken(32)
@@ -27,7 +28,8 @@ export async function POST(request: Request) {
       cap_from: clientId,
       client_name: clientName,
       account: '',
-      scope: 'read',
+      // What the agent asked for. The decide step narrows it to what the person granted.
+      scope: wantsWrite ? 'read write' : 'read',
       status: 'pending',
       user_code: userCode,
       device_code_hash: sha256(deviceCode),
