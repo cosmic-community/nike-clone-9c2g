@@ -41,6 +41,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           src="https://www.cosmicjs.com/agent.js"
           data-key="pk_03b207342c93ec8e8431244e4f108548"
           strategy="afterInteractive"
+          data-theme="light"
         />
         <CosmicBadge bucketSlug={bucketSlug} />
       </body>
