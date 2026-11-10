@@ -176,25 +176,32 @@ export async function holdPurchase(
   })
 }
 
-/** Marks the confirmation for a paid session done, records the order, and takes the items out of the bag. */
+/**
+ * Marks the confirmation for a paid session done, records the order, and takes the items out of the bag.
+ * Returns the confirmation as it now stands. Reads right after a write can be served from cache, so
+ * callers should use this rather than reading the confirmation again.
+ */
 export async function settlePaidSession(session: StripeSession): Promise<StoredObject | null> {
   const confirmationId = session.metadata?.confirmation_id
   const order = await recordPaidSession(session)
-  if (!order || !confirmationId) return order
+  if (!order || !confirmationId) return null
 
   const confirmation = await findConfirmation(confirmationId)
-  if (!confirmation || confirmation.metadata.status === 'done') return order
-  if (confirmation.metadata.account !== session.client_reference_id) return order
+  if (!confirmation || confirmation.metadata.account !== session.client_reference_id) return null
 
   const reference = orderReference(order.id)
   const { cents, currency } = confirmationTotal(confirmation)
-  await updateMetadata(confirmation, {
+  const settled = {
     status: 'done',
     result: {
       message: `Order ${reference} is placed. ${formatMoney(session.amount_total ?? cents, session.currency || currency)} was charged, and a receipt is on its way by email.`,
       reference,
     },
-  })
+  }
+  const current = { ...confirmation, metadata: { ...confirmation.metadata, ...settled } }
+  if (confirmation.metadata.status === 'done') return current
+
+  await updateMetadata(confirmation, settled)
 
   if (confirmation.metadata.source === 'cart') {
     const lines = confirmationLines(confirmation).map((line) => ({ key: line.key, quantity: line.quantity }))
@@ -202,7 +209,7 @@ export async function settlePaidSession(session: StripeSession): Promise<StoredO
       console.error('[confirm] could not update bag after payment', error)
     )
   }
-  return order
+  return current
 }
 
 /** A checkout the shopper never finished. Nothing was charged. */

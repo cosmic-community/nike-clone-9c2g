@@ -64,20 +64,23 @@ export default async function ConfirmPage({
     )
   }
 
-  // Back from Stripe. The webhook does the same, whichever arrives first.
-  if (session_id && isStripeSessionId(session_id) && confirmation.metadata.status === 'working') {
+  // Back from Stripe. The webhook does the same, whichever arrives first. Stripe is the source of
+  // truth here: our own read of the confirmation can lag a write by a moment.
+  let paid = false
+  if (session_id && isStripeSessionId(session_id) && confirmation.metadata.status !== 'done') {
     try {
       const session = await getStripeSession(session_id)
       if (session.metadata?.confirmation_id === id && session.client_reference_id === customer.id) {
-        await settlePaidSession(session)
-        confirmation = (await findConfirmation(id)) ?? confirmation
+        paid = session.payment_status === 'paid'
+        confirmation = (await settlePaidSession(session)) ?? confirmation
       }
     } catch (settleError) {
       console.error('[confirm] could not settle payment', settleError)
     }
   }
 
-  const status = effectiveStatus(confirmation)
+  const stored = effectiveStatus(confirmation)
+  const status = paid && stored !== 'done' ? 'done' : stored
   const lines = confirmationLines(confirmation)
   const { cents, currency } = confirmationTotal(confirmation)
   const agentName = String(confirmation.metadata.client_name || '') || 'Your AI agent'
