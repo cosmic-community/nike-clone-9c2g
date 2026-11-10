@@ -18,6 +18,32 @@ interface LooseObjectsApi {
 }
 
 const PROPS = ['id', 'title', 'slug', 'created_at', 'metadata']
+const COSMIC_API = 'https://api.cosmicjs.com/v3'
+
+// Reads skip the CDN (`use_cache=false`). This is state the app writes and reads back within
+// seconds (bags, logins, confirmations, orders), and a cached read can miss the latest write.
+// The SDK has no way to turn the cache off, so this calls the REST API directly.
+async function findUncached(
+  type: string,
+  filter: Record<string, unknown>,
+  limit: number
+): Promise<{ objects?: StoredObject[] }> {
+  const params = new URLSearchParams({
+    query: JSON.stringify({ type, ...filter }),
+    props: PROPS.join(','),
+    status: 'any',
+    sort: '-created_at',
+    limit: String(limit),
+    read_key: process.env.COSMIC_READ_KEY as string,
+    use_cache: 'false',
+  })
+  const response = await fetch(`${COSMIC_API}/buckets/${process.env.COSMIC_BUCKET_SLUG}/objects?${params}`, {
+    cache: 'no-store',
+  })
+  const body = (await response.json().catch(() => ({}))) as { objects?: StoredObject[]; message?: string }
+  if (!response.ok) throw { status: response.status, message: body.message || `HTTP ${response.status}` }
+  return body
+}
 
 export async function findMany(
   type: string,
@@ -25,12 +51,7 @@ export async function findMany(
   limit = 50
 ): Promise<StoredObject[]> {
   try {
-    const response = (await cosmic.objects
-      .find({ type, ...filter })
-      .props(PROPS)
-      .status('any')
-      .sort('-created_at')
-      .limit(limit)) as { objects?: StoredObject[] }
+    const response = await findUncached(type, filter, limit)
     return response.objects ?? []
   } catch (error) {
     if (hasStatus(error) && error.status === 404) return []
