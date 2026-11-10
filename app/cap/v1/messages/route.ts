@@ -155,7 +155,7 @@ export async function POST(request: Request) {
       data.status = 'failed'
       data.error = {
         code: 'unavailable',
-        message: error instanceof ShopError ? error.message : 'Could not update your bag right now. Try again shortly.',
+        message: error instanceof ShopError ? error.message : 'The store could not do that right now. Try again shortly.',
       }
     }
 
