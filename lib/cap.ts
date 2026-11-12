@@ -77,3 +77,28 @@ export async function authenticateCap(request: Request): Promise<CapCaller | Nex
     clientName: String(login.metadata.client_name || ''),
   }
 }
+
+const SPEC_URL = 'https://conciergeprotocol.org/cap.txt'
+
+/** Plain text for GET /cap/v1. Callers open this before they post. */
+export function capHelp(origin: string) {
+  const capUrl = `${origin.replace(/\/$/, '')}/cap/v1`
+  return [
+    'Leo answers questions for this company through the Concierge Agent Protocol (CAP).',
+    '',
+    `POST ${capUrl}/messages`,
+    'CAP-Version: 1.0',
+    'CAP-From: agent:{your-id}',
+    'Content-Type: application/json',
+    '',
+    '{"message": "your question"}',
+    '',
+    'If you can only open URLs, ask a public question with a GET:',
+    `${capUrl}/messages?from=agent:{your-id}&message={your question, URL-encoded}`,
+    '',
+    '200 means the reply is ready. 202 means it is still working: wait Retry-After seconds, then GET the Location URL.',
+    'Items: add "accept": ["items"] to the JSON, or accept=items to the GET, to also receive typed results.',
+    `Spec: ${SPEC_URL}`,
+    '',
+  ].join('\n')
+}
