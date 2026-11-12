@@ -14,5 +14,7 @@ export function GET(request: Request) {
     grant_types_supported: ['urn:ietf:params:oauth:grant-type:device_code', 'refresh_token'],
     token_endpoint_auth_methods_supported: ['none'],
     scopes_supported: ['read', 'write'],
+    // Callers log in only when this lists the CAP line from agent.txt exactly.
+    protected_resources: [`${origin}/cap/v1`],
   })
 }
