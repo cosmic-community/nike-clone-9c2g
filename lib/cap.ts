@@ -15,6 +15,8 @@ export interface CapMessageData {
   id: string
   status: 'working' | 'done' | 'failed'
   reply?: string
+  items?: unknown[]
+  as_of?: string
   error?: { code: string; message: string }
   created_at: string
   finished_at?: string
@@ -34,6 +36,7 @@ export function toPublic(data: CapMessageData, confirmation?: Record<string, unk
     id: data.id,
     status: data.status,
     ...(data.status === 'done' && data.reply ? { reply: data.reply } : {}),
+    ...(data.status === 'done' && data.items?.length ? { items: data.items, as_of: data.as_of } : {}),
     ...(data.status === 'failed' && data.error ? { error: data.error } : {}),
     ...(data.status === 'done' && confirmation ? { confirmation } : {}),
     created_at: data.created_at,

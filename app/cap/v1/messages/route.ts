@@ -6,6 +6,7 @@ import { authenticateCap, capError, toPublic, type CapMessageData } from '@/lib/
 import { confirmUrl, holdPurchase, messageConfirmation, publicConfirmation, ShopError } from '@/lib/confirmations'
 import { siteOrigin } from '@/lib/oauth'
 import { formatMoney, getOrdersForCustomer } from '@/lib/orders'
+import { parseAccept, productItems, sameOriginItems } from '@/lib/items'
 import { runShopAction } from '@/lib/shop-actions'
 import { findFirst, insertObject } from '@/lib/store'
 
@@ -87,6 +88,8 @@ export async function POST(request: Request) {
   if (context && JSON.stringify(context).length > 2000) {
     return capError('invalid_request', 'context is too large. Send a short brief.', 400)
   }
+  const accept = parseAccept(body.accept)
+  if (accept == null) return capError('invalid_request', 'accept must be an array of strings.', 400)
 
   try {
     const idempotencyKey = (request.headers.get('idempotency-key') || '').trim()
@@ -134,7 +137,7 @@ export async function POST(request: Request) {
     let confirmation: Record<string, unknown> | null = null
     let handled = true
     try {
-      const shop = await runShopAction(caller, text, context)
+      const shop = await runShopAction(caller, text, context, origin)
       if (shop.kind === 'none') {
         handled = false
       } else if (shop.kind === 'confirm') {
@@ -143,9 +146,18 @@ export async function POST(request: Request) {
         data.confirmation_id = String(held.metadata.confirmation_id)
         data.status = 'done'
         data.reply = `${held.metadata.summary} Nothing is charged until you approve and pay here: ${confirmUrl(origin, data.confirmation_id)}`
+        const cards = productItems(shop.items, origin)
+        if (cards.length) {
+          data.items = cards
+          data.as_of = new Date().toISOString()
+        }
       } else if (shop.kind === 'reply') {
         data.status = 'done'
         data.reply = shop.reply
+        if (shop.items?.length) {
+          data.items = shop.items
+          data.as_of = new Date().toISOString()
+        }
       } else if (shop.kind === 'error') {
         data.status = 'failed'
         data.error = { code: shop.code, message: shop.message }
@@ -172,10 +184,15 @@ export async function POST(request: Request) {
     } else {
       try {
         const prompt = await buildPrompt(text, context, caller.capFrom, caller.account)
-        const result = await askAgent(prompt, conversationId)
+        const result = await askAgent(prompt, conversationId, accept)
         data.status = 'done'
         data.reply = result.reply
         data.conversation_id = result.conversationId
+        const cards = sameOriginItems(result.items, origin)
+        if (cards.length) {
+          data.items = cards
+          data.as_of = result.asOf || new Date().toISOString()
+        }
       } catch (error) {
         console.error('[cap] answer failed', error)
         if (caller.account && accountQuestion) {
