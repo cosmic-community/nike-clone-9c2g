@@ -93,11 +93,19 @@ export function confirmationTotal(object: StoredObject): { cents: number; curren
   }
 }
 
+/** Drops the bag bookkeeping flag. Callers see the shopper-facing result only. */
+function visibleResult(result: unknown): Record<string, unknown> | null {
+  if (!result || typeof result !== 'object') return null
+  const rest = { ...(result as Record<string, unknown>) }
+  delete rest.bag_settled
+  return Object.keys(rest).length ? rest : null
+}
+
 /** The confirmation as a CAP caller sees it. */
 export function publicConfirmation(object: StoredObject, origin: string) {
   const status = effectiveStatus(object)
   const id = String(object.metadata.confirmation_id)
-  const result = object.metadata.result as Record<string, unknown> | null
+  const result = visibleResult(object.metadata.result)
   return {
     id,
     status,
@@ -105,7 +113,7 @@ export function publicConfirmation(object: StoredObject, origin: string) {
     summary: String(object.metadata.summary),
     authorization_details: object.metadata.authorization_details,
     expires_at: String(object.metadata.expires_at),
-    ...((status === 'done' || status === 'failed') && result && Object.keys(result).length ? { result } : {}),
+    ...((status === 'done' || status === 'failed') && result ? { result } : {}),
   }
 }
 
@@ -176,8 +184,18 @@ export async function holdPurchase(
   })
 }
 
+// A receipt opened long after checkout must not take a shoe the shopper added later.
+const BAG_RELEASE_WINDOW_MS = 24 * 60 * 60 * 1000
+
+interface PaidResult {
+  message: string
+  reference: string
+  bag_settled: boolean
+}
+
 /**
- * Marks the confirmation for a paid session done, records the order, and takes the items out of the bag.
+ * Marks the confirmation for a paid session done, records the order, and takes the purchased
+ * quantities out of the bag. A buy-now uses the same bag line as an add, so it comes out too.
  * Returns the confirmation as it now stands. Reads right after a write can be served from cache, so
  * callers should use this rather than reading the confirmation again.
  */
@@ -189,27 +207,50 @@ export async function settlePaidSession(session: StripeSession): Promise<StoredO
   const confirmation = await findConfirmation(confirmationId)
   if (!confirmation || confirmation.metadata.account !== session.client_reference_id) return null
 
-  const reference = orderReference(order.id)
+  const previous = (confirmation.metadata.result || {}) as Partial<PaidResult>
+  const reference = previous.reference || orderReference(order.id)
   const { cents, currency } = confirmationTotal(confirmation)
-  const settled = {
-    status: 'done',
-    result: {
-      message: `Order ${reference} is placed. ${formatMoney(session.amount_total ?? cents, session.currency || currency)} was charged, and a receipt is on its way by email.`,
-      reference,
-    },
+  const result: PaidResult = {
+    message:
+      previous.message ||
+      `Order ${reference} is placed. ${formatMoney(session.amount_total ?? cents, session.currency || currency)} was charged, and a receipt is on its way by email.`,
+    reference,
+    bag_settled: previous.bag_settled === true,
   }
-  const current = { ...confirmation, metadata: { ...confirmation.metadata, ...settled } }
-  if (confirmation.metadata.status === 'done') return current
+  const alreadyDone = confirmation.metadata.status === 'done'
+  const settled = { ...confirmation, metadata: { ...confirmation.metadata, status: 'done', result } }
+  if (!alreadyDone) await updateMetadata(confirmation, { status: 'done', result: { ...result, bag_settled: false } })
 
-  await updateMetadata(confirmation, settled)
-
-  if (confirmation.metadata.source === 'cart') {
-    const lines = confirmationLines(confirmation).map((line) => ({ key: line.key, quantity: line.quantity }))
-    await changeCart(String(confirmation.metadata.account), { op: 'subtract', lines }).catch((error) =>
-      console.error('[confirm] could not update bag after payment', error)
-    )
+  const createdAt = Date.parse(confirmation.created_at || '')
+  const recent = !Number.isFinite(createdAt) || Date.now() - createdAt < BAG_RELEASE_WINDOW_MS
+  const flag = previous.bag_settled
+  const shouldRelease = flag !== true && (!alreadyDone || flag === false || (flag == null && recent))
+  if (!shouldRelease) {
+    if (alreadyDone && flag == null) {
+      result.bag_settled = true
+      await updateMetadata(confirmation, { result })
+    }
+    return { ...settled, metadata: { ...settled.metadata, result } }
   }
-  return current
+
+  try {
+    const lines = confirmationLines(confirmation)
+      .filter((line) => line.key && line.quantity > 0)
+      .map((line) => ({
+        key: line.key,
+        productId: line.product_id,
+        color: line.color,
+        size: line.size,
+        quantity: line.quantity,
+      }))
+    if (lines.length) await changeCart(String(confirmation.metadata.account), { op: 'subtract', lines })
+    result.bag_settled = true
+    await updateMetadata(confirmation, { result })
+  } catch (error) {
+    console.error('[confirm] could not update bag after payment', error)
+    result.bag_settled = false
+  }
+  return { ...settled, metadata: { ...settled.metadata, result } }
 }
 
 /** A checkout the shopper never finished. Nothing was charged. */

@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import AuthForm from '@/components/AuthForm'
+import ReleasePurchased from '@/components/ReleasePurchased'
 import { getCurrentCustomer } from '@/lib/auth'
 import {
   confirmationLines,
@@ -65,9 +66,11 @@ export default async function ConfirmPage({
   }
 
   // Back from Stripe. The webhook does the same, whichever arrives first. Stripe is the source of
-  // truth here: our own read of the confirmation can lag a write by a moment.
+  // truth here: our own read of the confirmation can lag a write by a moment. A done confirmation
+  // still settles once more until the bag has been released, so a buy-now leaves the bag empty too.
   let paid = false
-  if (session_id && isStripeSessionId(session_id) && confirmation.metadata.status !== 'done') {
+  const bagSettled = (confirmation.metadata.result as { bag_settled?: boolean } | undefined)?.bag_settled === true
+  if (session_id && isStripeSessionId(session_id) && (confirmation.metadata.status !== 'done' || !bagSettled)) {
     try {
       const session = await getStripeSession(session_id)
       if (session.metadata?.confirmation_id === id && session.client_reference_id === customer.id) {
@@ -120,6 +123,17 @@ export default async function ConfirmPage({
   if (status === 'done') {
     return (
       <Shell title="Order placed">
+        {session_id && (
+          <ReleasePurchased
+            lines={lines.map((line) => ({
+              key: line.key,
+              productId: line.product_id,
+              color: line.color,
+              size: line.size,
+              quantity: line.quantity,
+            }))}
+          />
+        )}
         <p className="text-gray-600 mb-6">{result.message || 'Your order is placed.'}</p>
         {summary}
         <p className="text-sm text-gray-500 mb-6">{agentName} has been told. You can close this page.</p>
