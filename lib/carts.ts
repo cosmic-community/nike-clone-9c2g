@@ -12,7 +12,7 @@ export type CartOp =
   | { op: 'remove'; key: string }
   | { op: 'clear' }
   | { op: 'merge'; items: CartItem[] }
-  | { op: 'subtract'; lines: Array<{ key: string; quantity: number }> }
+  | { op: 'subtract'; lines: Array<{ key: string; productId?: string; color?: string; size?: string; quantity: number }> }
 
 export function buildCartKey(productId: string, color?: string, size?: string): string {
   return [productId, color || '', size || ''].join('::')
@@ -57,6 +57,15 @@ export async function getCart(customerId: string): Promise<CartItem[]> {
   return items.map(sanitizeItem).filter((item): item is CartItem => item !== null)
 }
 
+function sameLine(
+  entry: CartItem,
+  line: { key: string; productId?: string; color?: string; size?: string }
+): boolean {
+  if (line.key && entry.key === line.key) return true
+  if (!line.productId || entry.productId !== line.productId) return false
+  return (entry.color || '') === (line.color || '') && (entry.size || '') === (line.size || '')
+}
+
 function addLine(items: CartItem[], line: CartItem): CartItem[] {
   const existing = items.find((entry) => entry.key === line.key)
   if (existing) {
@@ -90,8 +99,8 @@ function applyOp(items: CartItem[], op: CartOp): CartItem[] {
     case 'subtract':
       return items
         .map((entry) => {
-          const taken = op.lines.find((line) => line.key === entry.key)
-          return taken ? { ...entry, quantity: entry.quantity - taken.quantity } : entry
+          const taken = op.lines.find((line) => sameLine(entry, line))
+          return taken ? { ...entry, quantity: entry.quantity - clampQuantity(taken.quantity) } : entry
         })
         .filter((entry) => entry.quantity > 0)
   }

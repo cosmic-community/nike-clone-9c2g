@@ -14,6 +14,7 @@ import type { CartItem } from '@/types'
 
 // Guest bag only. A signed-in shopper's bag lives on the server so their AI agent can change it too.
 const STORAGE_KEY = 'swsh-cart-v1'
+const MERGED_KEY = 'swsh-cart-guest-merged'
 const REFRESH_MS = 20_000
 
 interface CartContextValue {
@@ -24,7 +25,16 @@ interface CartContextValue {
   removeItem: (key: string) => void
   updateQuantity: (key: string, quantity: number) => void
   clearCart: () => void
+  reload: () => Promise<void>
   isHydrated: boolean
+}
+
+export interface BagLine {
+  key: string
+  productId?: string
+  color?: string
+  size?: string
+  quantity: number
 }
 
 type CartOp =
@@ -92,6 +102,43 @@ function writeGuestCart(items: CartItem[]) {
   }
 }
 
+function guestAlreadyMerged(): boolean {
+  try {
+    return window.localStorage.getItem(MERGED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function markGuestMerged(merged: boolean) {
+  try {
+    if (merged) window.localStorage.setItem(MERGED_KEY, '1')
+    else window.localStorage.removeItem(MERGED_KEY)
+  } catch {
+    // Ignore quota / private-mode write failures.
+  }
+}
+
+function sameBagLine(entry: CartItem, line: BagLine): boolean {
+  if (line.key && entry.key === line.key) return true
+  if (!line.productId || entry.productId !== line.productId) return false
+  return (entry.color || '') === (line.color || '') && (entry.size || '') === (line.size || '')
+}
+
+/** Drops purchased quantities from the guest bag before sign-in hydration can merge them back. */
+export function stripGuestLines(lines: BagLine[]) {
+  if (typeof window === 'undefined' || lines.length === 0) return
+  const guest = readGuestCart()
+  if (!guest.length) return
+  const next = guest
+    .map((entry) => {
+      const taken = lines.find((line) => sameBagLine(entry, line))
+      return taken ? { ...entry, quantity: entry.quantity - taken.quantity } : entry
+    })
+    .filter((entry) => entry.quantity > 0)
+  writeGuestCart(next)
+}
+
 async function sendServerOp(op: CartOp): Promise<CartItem[] | null> {
   const response = await fetch('/api/cart', {
     method: 'POST',
@@ -130,14 +177,19 @@ export function CartProvider({ children }: { children: ReactNode }) {
       setItems(guest)
       await refresh()
       if (cancelled) return
-      if (signedIn.current && guest.length) {
+      // Once per browser. Repeating this after checkout puts the paid lines back in the bag.
+      if (signedIn.current && guest.length && !guestAlreadyMerged()) {
+        markGuestMerged(true)
+        writeGuestCart([])
         const merged = await sendServerOp({ op: 'merge', items: guest }).catch(() => null)
-        if (merged && !cancelled) {
-          writeGuestCart([])
+        if (!merged) {
+          markGuestMerged(false)
+          writeGuestCart(guest)
+        } else if (!cancelled) {
           setItems(merged)
         }
       }
-      setIsHydrated(true)
+      if (!cancelled) setIsHydrated(true)
     }
     hydrate()
     return () => {
@@ -163,7 +215,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const dispatch = useCallback((op: CartOp) => {
     setItems((current) => {
       const next = applyLocal(current, op)
-      if (!signedIn.current) writeGuestCart(next)
+      if (!signedIn.current) {
+        writeGuestCart(next)
+        if (next.length) markGuestMerged(false)
+      }
       return next
     })
     if (!signedIn.current) return
@@ -192,8 +247,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const value = useMemo<CartContextValue>(() => {
     const itemCount = items.reduce((sum, item) => sum + item.quantity, 0)
     const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0)
-    return { items, itemCount, subtotal, isHydrated, ...actions }
-  }, [items, isHydrated, actions])
+    return { items, itemCount, subtotal, isHydrated, reload: refresh, ...actions }
+  }, [items, isHydrated, actions, refresh])
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>
 }
