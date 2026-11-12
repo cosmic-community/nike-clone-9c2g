@@ -5,11 +5,12 @@ import type { CapCaller } from '@/lib/cap'
 import { buildCartKey, changeCart, getCart } from '@/lib/carts'
 import { getMetafieldValue, getProducts } from '@/lib/cosmic'
 import { hasWrite } from '@/lib/oauth'
+import { productItems } from '@/lib/items'
 import { formatMoney } from '@/lib/orders'
 
 export type ShopOutcome =
   | { kind: 'none' }
-  | { kind: 'reply'; reply: string }
+  | { kind: 'reply'; reply: string; items?: ReturnType<typeof productItems> }
   | { kind: 'error'; code: string; message: string }
   | { kind: 'confirm'; items: CartItem[]; source: 'cart' | 'buy_now' }
 
@@ -157,7 +158,8 @@ function detectIntent(text: string, hasProduct: boolean): Intent | null {
 export async function runShopAction(
   caller: CapCaller,
   message: string,
-  context?: Record<string, unknown>
+  context?: Record<string, unknown>,
+  origin = ''
 ): Promise<ShopOutcome> {
   const hints = context
     ? Object.values(context).filter((value) => typeof value === 'string' || typeof value === 'number').join(' ')
@@ -185,8 +187,10 @@ export async function runShopAction(
 
   const account = caller.account
   switch (intent) {
-    case 'view':
-      return { kind: 'reply', reply: describeBag(await getCart(account)) }
+    case 'view': {
+      const bag = await getCart(account)
+      return { kind: 'reply', reply: describeBag(bag), items: origin ? productItems(bag, origin) : undefined }
+    }
 
     case 'clear':
       await changeCart(account, { op: 'clear' })
@@ -219,7 +223,11 @@ export async function runShopAction(
 
       const bag = await changeCart(account, { op: 'add', item: resolved.item, quantity })
       const added = `Added ${quantity > 1 ? `${quantity}× ` : ''}${describeItem(resolved.item)} to your SWSH. bag.`
-      return { kind: 'reply', reply: [added, resolved.note, describeBag(bag), 'Say "check out" when you are ready.'].filter(Boolean).join('\n\n') }
+      return {
+        kind: 'reply',
+        reply: [added, resolved.note, describeBag(bag), 'Say "check out" when you are ready.'].filter(Boolean).join('\n\n'),
+        items: origin ? productItems([resolved.item], origin) : undefined,
+      }
     }
 
     case 'remove': {

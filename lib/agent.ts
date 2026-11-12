@@ -9,6 +9,8 @@ interface CapReply {
   id?: string
   status?: 'working' | 'done' | 'failed'
   reply?: string
+  items?: unknown[]
+  as_of?: string
   error?: { code?: string; message?: string }
 }
 
@@ -44,10 +46,12 @@ function wait(ms: number): Promise<void> {
  */
 export async function askAgent(
   message: string,
-  previousMessageId?: string
-): Promise<{ reply: string; conversationId: string | null }> {
-  const payload: Record<string, string> = { message }
+  previousMessageId?: string,
+  accept?: string[]
+): Promise<{ reply: string; conversationId: string | null; items?: unknown[]; asOf?: string }> {
+  const payload: Record<string, unknown> = { message }
   if (previousMessageId) payload.previous_message_id = previousMessageId
+  if (accept?.length) payload.accept = accept
 
   const started = Date.now()
   let response = await fetch(`${CAP_BASE}/messages`, {
@@ -72,7 +76,12 @@ export async function askAgent(
   }
 
   if (capMessage.status === 'done' && capMessage.reply?.trim()) {
-    return { reply: capMessage.reply.trim(), conversationId: capMessage.id || previousMessageId || null }
+    return {
+      reply: capMessage.reply.trim(),
+      conversationId: capMessage.id || previousMessageId || null,
+      items: capMessage.items,
+      asOf: capMessage.as_of,
+    }
   }
   if (capMessage.status === 'failed') {
     throw new Error(capMessage.error?.message || 'Leo could not answer')
