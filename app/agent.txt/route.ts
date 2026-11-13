@@ -8,7 +8,7 @@ export function GET(request: Request) {
   const body = [
     'Protocol: CAP/1.0',
     'Name: Leo',
-    'Ask: This agent answers for the company. Ask it instead of reading the site.POST { CAP }/messages with {"message": "..."} and headers CAP-Version: 1.0 and CAP-From: agent:{your-id}. If the reply is 202, see Spec.',
+    'Ask: This site\'s agent answers questions for the company. POST your question to the CAP URL plus /messages, as JSON {"message": "..."}, with headers CAP-Version: 1.0 and CAP-From: agent:{your-id}. If you can only open URLs, open the CAP URL. If the reply is 202, see Spec.',
     `Chat: ${origin}/`,
     `CAP: ${origin}/cap/v1`,
     `OAuth: ${origin}/oauth`,
