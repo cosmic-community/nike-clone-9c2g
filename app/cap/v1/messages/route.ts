@@ -2,7 +2,7 @@ import { randomBytes } from 'crypto'
 import { NextResponse } from 'next/server'
 import { getCustomerById, sha256 } from '@/lib/auth'
 import { askAgent } from '@/lib/agent'
-import { authenticateCap, capError, toPublic, type CapMessageData } from '@/lib/cap'
+import { authenticateCap, capError, capHelp, toPublic, type CapCaller, type CapMessageData } from '@/lib/cap'
 import { confirmUrl, holdPurchase, messageConfirmation, publicConfirmation, ShopError } from '@/lib/confirmations'
 import { siteOrigin } from '@/lib/oauth'
 import { formatMoney, getOrdersForCustomer } from '@/lib/orders'
@@ -65,6 +65,58 @@ async function buildPrompt(
   return parts.join('\n\n')
 }
 
+type Ask = {
+  text: string
+  context?: Record<string, unknown>
+  accept: string[]
+  previousMessageId: unknown
+  idempotencyKey: string
+  noStore?: boolean
+}
+
+function messageJson(body: unknown, noStore?: boolean) {
+  return NextResponse.json(body, noStore ? { headers: { 'Cache-Control': 'no-store' } } : undefined)
+}
+
+/** A public question opened as a URL. Browsers and ChatGPT can send this. They cannot POST. */
+export async function GET(request: Request) {
+  const url = new URL(request.url)
+  if (!url.searchParams.has('message')) {
+    return new Response(capHelp(siteOrigin(request)), {
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'public, max-age=300',
+      },
+    })
+  }
+  if (!url.searchParams.has('from')) {
+    return capError('invalid_request', 'Add from=agent:{your-id} to the URL.', 400)
+  }
+
+  const caller = await authenticateCap(request)
+  if (caller instanceof NextResponse) return caller
+
+  const text = (url.searchParams.get('message') || '').trim()
+  if (!text) return capError('invalid_request', 'message is required.', 400)
+  if (text.length > 4000) return capError('invalid_request', 'message is too long.', 400)
+
+  const accept = parseAccept(url.searchParams.get('accept'))
+  if (accept == null) return capError('invalid_request', 'accept must be an array of strings.', 400)
+
+  // Fetch tools retry a GET. The same question from the same agent within a minute is asked once.
+  const minute = Math.floor(Date.now() / 60_000)
+  const previous = url.searchParams.get('previous_message_id') || ''
+  const askKey = sha256(JSON.stringify([caller.capFrom, text, previous, accept, minute])).slice(0, 32)
+
+  return answerMessage(request, caller, {
+    text,
+    accept,
+    previousMessageId: url.searchParams.has('previous_message_id') ? previous : undefined,
+    idempotencyKey: `get-${askKey}`,
+    noStore: true,
+  })
+}
+
 export async function POST(request: Request) {
   const caller = await authenticateCap(request)
   if (caller instanceof NextResponse) return caller
@@ -91,21 +143,32 @@ export async function POST(request: Request) {
   const accept = parseAccept(body.accept)
   if (accept == null) return capError('invalid_request', 'accept must be an array of strings.', 400)
 
+  return answerMessage(request, caller, {
+    text,
+    context,
+    accept,
+    previousMessageId: body.previous_message_id,
+    idempotencyKey: (request.headers.get('idempotency-key') || '').trim(),
+  })
+}
+
+async function answerMessage(request: Request, caller: CapCaller, ask: Ask) {
+  const { text, context, accept } = ask
   try {
-    const idempotencyKey = (request.headers.get('idempotency-key') || '').trim()
+    const idempotencyKey = ask.idempotencyKey
     const scopedKey = idempotencyKey ? sha256(`${caller.capFrom}|${caller.account ?? ''}|${idempotencyKey}`) : ''
     if (scopedKey) {
       const existing = await findFirst('cap-messages', { 'metadata.idempotency_key': scopedKey })
       if (existing) {
         const stored = existing.metadata.data as CapMessageData
-        return NextResponse.json(toPublic(stored, await messageConfirmation(stored, siteOrigin(request))))
+        return messageJson(toPublic(stored, await messageConfirmation(stored, siteOrigin(request))), ask.noStore)
       }
     }
 
     let conversationId: string | undefined
     let turn = 1
-    if (body.previous_message_id !== undefined) {
-      const previousId = body.previous_message_id
+    if (ask.previousMessageId !== undefined) {
+      const previousId = ask.previousMessageId
       if (typeof previousId !== 'string' || !previousId) {
         return capError('invalid_request', 'previous_message_id must be a message id.', 400)
       }
@@ -224,7 +287,7 @@ export async function POST(request: Request) {
       console.error('[cap] could not store message', error)
     }
 
-    return NextResponse.json(toPublic(data, confirmation))
+    return messageJson(toPublic(data, confirmation), ask.noStore)
   } catch (error) {
     console.error('[cap] unexpected error', error)
     return capError('unavailable', 'The store assistant is not answering right now.', 503)
