@@ -44,7 +44,26 @@ export function toPublic(data: CapMessageData, confirmation?: Record<string, unk
   }
 }
 
+const QUERY_FROM = /^agent:[A-Za-z0-9_.-]{1,64}$/
+
 export async function authenticateCap(request: Request): Promise<CapCaller | NextResponse> {
+  // Agents that can only open a URL name themselves with ?from= instead of headers.
+  // That form never carries a login.
+  if (request.method === 'GET') {
+    const from = new URL(request.url).searchParams.get('from')
+    if (from !== null) {
+      if (request.headers.get('authorization')) {
+        return capError(
+          'invalid_request',
+          'A GET with from= asks public questions only. Send account questions with POST.',
+          400
+        )
+      }
+      if (!QUERY_FROM.test(from)) return capError('invalid_request', 'from must be agent:{id}.', 400)
+      return { capFrom: from, account: null, scope: null, clientName: '' }
+    }
+  }
+
   const version = (request.headers.get('cap-version') || '').trim()
   if (!version) return capError('invalid_request', 'The CAP-Version header is required.', 400)
   if (!/^1(\.\d+)?$/.test(version)) return capError('version_not_supported', 'This door speaks CAP 1.x.', 400)

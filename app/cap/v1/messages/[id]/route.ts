@@ -23,5 +23,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   }
 
   const data = stored.metadata.data as CapMessageData
-  return NextResponse.json(toPublic(data, await messageConfirmation(data, siteOrigin(request))))
+  const headers: Record<string, string> = { 'Cache-Control': 'no-store' }
+  if (data.status === 'working') headers['Retry-After'] = '5'
+  return NextResponse.json(toPublic(data, await messageConfirmation(data, siteOrigin(request))), { headers })
 }
