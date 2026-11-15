@@ -7,6 +7,7 @@ import PriceDisplay from '@/components/PriceDisplay'
 import InventoryBadge from '@/components/InventoryBadge'
 import VariantSelector from '@/components/VariantSelector'
 import ReviewsList from '@/components/ReviewsList'
+import { productAvailable } from '@/lib/catalog'
 
 interface ProductPageProps {
   params: Promise<{ slug: string }>
@@ -36,8 +37,31 @@ export default async function ProductPage({ params }: ProductPageProps) {
       ? reviews.reduce((sum, r) => sum + (Number(r.metadata?.rating) || 0), 0) / reviews.length
       : 0
 
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name,
+    description: description || undefined,
+    sku: product.slug,
+    image: (product.metadata?.gallery || []).map((image) => image.imgix_url),
+    brand: { '@type': 'Brand', name: 'SWSH.' },
+    category: category ? getMetafieldValue(category.metadata?.name) || category.title : undefined,
+    offers: {
+      '@type': 'Offer',
+      url: `/products/${product.slug}`,
+      price: price.toFixed(2),
+      priceCurrency: 'USD',
+      availability: productAvailable(product) ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+      itemCondition: 'https://schema.org/NewCondition',
+    },
+    aggregateRating: reviews.length
+      ? { '@type': 'AggregateRating', ratingValue: avgRating.toFixed(1), reviewCount: reviews.length }
+      : undefined,
+  }
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }} />
       <nav className="text-sm text-gray-500 mb-8">
         <Link href="/products" className="hover:text-black transition-colors">
           Products
